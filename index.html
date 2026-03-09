@@ -1,397 +1,447 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Users, 
-  Target, 
-  Send, 
-  Loader2, 
-  CheckCircle2, 
-  MessageSquare, 
-  TrendingUp, 
-  ShieldAlert,
-  ArrowRight,
-  Copy,
-  RefreshCcw,
-  Search,
-  Zap,
-  Key,
-  ExternalLink,
-  Lock,
-  Settings,
-  Sparkles,
-  Info
-} from 'lucide-react';
-
-// 실행 환경에서 제공하는 API 키를 바인딩하기 위한 변수
-const apiKey = ""; 
-
-const App = () => {
-  // --- States ---
-  const [view, setView] = useState('init'); // 'init', 'app'
-  const [userApiKey, setUserApiKey] = useState('');
-  
-  const [productName, setProductName] = useState('');
-  const [goal, setGoal] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(null);
-  const [error, setError] = useState(null);
-  const [copyStatus, setCopyStatus] = useState(false);
-
-  // --- Constants ---
-  const API_GET_URL = "https://aistudio.google.com/app/apikey";
-  const MODEL_NAME = "gemini-flash-latest"; // 제미나이 모델 변경
-
-  // --- Initial Setup ---
-  useEffect(() => {
-    const savedKey = localStorage.getItem('gemini_api_key');
-    if (savedKey) {
-      setUserApiKey(savedKey);
-    }
-  }, []);
-
-  // --- Handlers ---
-  const saveAndGoToApp = () => {
-    const trimmedKey = userApiKey.trim();
-    if (trimmedKey.length < 20) {
-      setError("유효한 API 키 형식이 아닙니다. 다시 확인해 주세요.");
-      return;
-    }
-    localStorage.setItem('gemini_api_key', trimmedKey);
-    setView('app');
-    setError(null);
-  };
-
-  const resetToHome = () => {
-    // API 기억 삭제 및 입력칸 초기화 로직 추가
-    localStorage.removeItem('gemini_api_key');
-    setUserApiKey('');
-    
-    setView('init');
-    setResults(null);
-    setError(null);
-    setProductName('');
-    setGoal('');
-  };
-
-  const fetchWithRetry = async (url, options, maxRetries = 5) => {
-    let retries = 0;
-    while (retries < maxRetries) {
-      try {
-        const response = await fetch(url, options);
-        if (response.ok) return await response.json();
-        
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || `Error ${response.status}`);
-      } catch (err) {
-        retries++;
-        if (retries === maxRetries) throw err;
-        const delay = Math.pow(2, retries) * 1000; // 1s, 2s, 4s...
-        await new Promise(res => setTimeout(res, delay));
-      }
-    }
-  };
-
-  const generateTargets = async () => {
-    if (!productName.trim()) {
-      setError("상품명을 입력해 주세요.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setResults(null);
-
-    const currentKey = userApiKey.trim();
-
-    const systemPrompt = `
-      당신은 글로벌 소비재 기업의 '수석 상품 기획자'이자 '컨슈머 트렌드 분석가'입니다. 
-      상품 정보를 바탕으로 구매력과 미래 가치를 진단하기 위한 최적의 인터뷰 대상자 10명을 제안하십시오.
-      반드시 다음 10가지 소비자 관점을 유지하십시오:
-      1. Trendsetter, 2. Hard-Core Reviewer, 3. Heavy User, 4. Life-Styler, 5. Tech-Savvy, 
-      6. Next-Gen, 7. Ethical Consumer, 8. Economic Analyst, 9. CX Strategist, 10. Skeptic.
-      
-      중요 지침:
-      - 'impact' 필드에는 해당 타겟의 영향력과 함께 이 타겟을 선정한 이유를 반드시 포함하여 '3줄'로 작성하십시오.
-      
-      응답은 반드시 한국어로 작성하며 JSON 형식이어야 합니다.
-    `;
-
-    try {
-      const data = await fetchWithRetry(
-        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${currentKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `분석 대상 상품: ${productName}\n인터뷰 핵심 목표: ${goal || '시장 경쟁력 확보'}` }] }],
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            generationConfig: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: "OBJECT",
-                properties: {
-                  targets: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        type: { type: "STRING" },
-                        persona: { type: "STRING" },
-                        impact: { type: "STRING" },
-                        question: { type: "STRING" },
-                        insight: { type: "STRING" }
-                      },
-                      required: ["type", "persona", "impact", "question", "insight"]
-                    }
-                  }
-                }
-              }
-            }
-          })
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Target Optimizer</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React, ReactDOM, Babel CDNs -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Core CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;800;900&display=swap');
+        body {
+            font-family: 'Pretendard', sans-serif;
         }
-      );
+        .animate-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-      const resText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!resText) throw new Error("분석 데이터를 가져오지 못했습니다.");
-      
-      const parsedData = JSON.parse(resText);
-      setResults(parsedData.targets);
-    } catch (err) {
-      console.error(err);
-      setError("API 키가 유효하지 않거나 네트워크 오류가 발생했습니다. 키를 확인하고 다시 시도해 주세요.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
 
-  const copyResults = () => {
-    if (!results) return;
-    
-    let textToCopy = `[분석 대상 상품]\n${productName}\n\n`;
-    textToCopy += `[인터뷰 핵심 목표]\n${goal || '시장 경쟁력 확보'}\n\n`;
-    textToCopy += `[전문 인터뷰 타겟 제안 리스트]\n\n`;
-    
-    textToCopy += results.map((t, i) => (
-      `${i + 1}. [${t.type}] ${t.persona}\n` +
-      `- 선정 이유: ${t.impact}\n` +
-      `- 전략적 질문: ${t.question}\n` +
-      `- 기대 통찰: ${t.insight}`
-    )).join('\n\n');
+        /**
+         * Lucide-React UMD 오류를 방지하기 위한 커스텀 아이콘 컴포넌트
+         */
+        const LucideIcon = ({ name, size = 24, className = "", ...props }) => {
+            const iconHtml = useMemo(() => {
+                const iconName = name.charAt(0).toLowerCase() + name.slice(1);
+                const icon = window.lucide?.icons?.[iconName];
+                if (!icon) return "";
+                return icon.toSvg({
+                    width: size,
+                    height: size,
+                    class: className,
+                    ...props
+                });
+            }, [name, size, className, props]);
 
-    const textArea = document.createElement("textarea");
-    textArea.value = textToCopy;
-    document.body.appendChild(textArea);
-    textArea.select();
-    document.execCommand('copy');
-    document.body.removeChild(textArea);
-    setCopyStatus(true);
-    setTimeout(() => setCopyStatus(false), 2000);
-  };
+            if (!iconHtml) return null;
+            return <span className="inline-flex items-center justify-center" dangerouslySetInnerHTML={{ __html: iconHtml }} />;
+        };
 
-  // --- Render Functions ---
+        // 기존 코드의 호환성을 위해 아이콘 컴포넌트 정의
+        const Users = (p) => <LucideIcon name="Users" {...p} />;
+        const Target = (p) => <LucideIcon name="Target" {...p} />;
+        const Send = (p) => <LucideIcon name="Send" {...p} />;
+        const Loader2 = (p) => <LucideIcon name="Loader2" {...p} />;
+        const CheckCircle2 = (p) => <LucideIcon name="CheckCircle2" {...p} />;
+        const MessageSquare = (p) => <LucideIcon name="MessageSquare" {...p} />;
+        const TrendingUp = (p) => <LucideIcon name="TrendingUp" {...p} />;
+        const ShieldAlert = (p) => <LucideIcon name="ShieldAlert" {...p} />;
+        const ArrowRight = (p) => <LucideIcon name="ArrowRight" {...p} />;
+        const Copy = (p) => <LucideIcon name="Copy" {...p} />;
+        const RefreshCcw = (p) => <LucideIcon name="RefreshCcw" {...p} />;
+        const Search = (p) => <LucideIcon name="Search" {...p} />;
+        const Zap = (p) => <LucideIcon name="Zap" {...p} />;
+        const Key = (p) => <LucideIcon name="Key" {...p} />;
+        const ExternalLink = (p) => <LucideIcon name="ExternalLink" {...p} />;
+        const Lock = (p) => <LucideIcon name="Lock" {...p} />;
+        const Settings = (p) => <LucideIcon name="Settings" {...p} />;
+        const Sparkles = (p) => <LucideIcon name="Sparkles" {...p} />;
+        const Info = (p) => <LucideIcon name="Info" {...p} />;
 
-  const renderHomeScreen = () => (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-700">
-      <div className="w-20 h-20 bg-indigo-600 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-2xl shadow-indigo-100 transform rotate-6">
-        <Zap className="text-white fill-current" size={40} />
-      </div>
-      <h1 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tight mb-4">
-        Interview Target <span className="text-indigo-600">Optimizer</span>
-      </h1>
-      <p className="text-sm md:text-base font-medium text-slate-500 max-w-lg mb-12 leading-relaxed">
-        상품의 현재 구매력과 미래 가치를 완벽하게 진단해 줄<br/>
-        최고의 인터뷰 타겟 10인을 AI가 정밀 제안합니다.
-      </p>
+        // 실행 환경에서 제공하는 API 키를 바인딩하기 위한 변수
+        const apiKey = ""; 
 
-      <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-xl p-8 md:p-10 border border-slate-100 text-left">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-100">
-            <Lock className="text-white" size={32} />
-          </div>
-          <h2 className="text-2xl font-black text-slate-900 mb-2 tracking-tight">API 설정</h2>
-          <p className="text-slate-500 text-sm font-medium leading-relaxed">
-            분석을 위해 개인 API 키를 입력해 주세요.
-          </p>
-        </div>
+        const App = () => {
+            // --- States ---
+            const [view, setView] = useState('init'); // 'init', 'app'
+            const [userApiKey, setUserApiKey] = useState('');
+            
+            const [productName, setProductName] = useState('');
+            const [goal, setGoal] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [results, setResults] = useState(null);
+            const [error, setError] = useState(null);
+            const [copyStatus, setCopyStatus] = useState(false);
 
-        <div className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-sm font-black text-slate-400 uppercase tracking-widest ml-1">Gemini API Key</label>
-            <input 
-              type="password" 
-              placeholder="AIzaSy... 로 시작하는 키"
-              className="w-full px-5 py-4 bg-slate-50 rounded-2xl border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-mono text-sm"
-              value={userApiKey}
-              onChange={(e) => setUserApiKey(e.target.value)}
-            />
-          </div>
+            // --- Constants ---
+            const API_GET_URL = "https://aistudio.google.com/app/apikey";
+            const MODEL_NAME = "gemini-flash-latest"; // 제미나이 모델 변경
 
-          <button 
-            onClick={saveAndGoToApp}
-            className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-2"
-          >
-            설정 저장 및 분석 시작 <ArrowRight size={18} />
-          </button>
+            // --- Initial Setup ---
+            useEffect(() => {
+                const savedKey = localStorage.getItem('gemini_api_key');
+                if (savedKey) {
+                    setUserApiKey(savedKey);
+                }
+            }, []);
 
-          {error && (
-            <div className="p-3 bg-rose-50 text-rose-600 text-sm font-bold rounded-xl flex items-center gap-2 border border-rose-100">
-              <ShieldAlert size={14} /> {error}
-            </div>
-          )}
-        </div>
-      </div>
+            // --- Handlers ---
+            const saveAndGoToApp = () => {
+                const trimmedKey = userApiKey.trim();
+                if (trimmedKey.length < 20) {
+                    setError("유효한 API 키 형식이 아닙니다. 다시 확인해 주세요.");
+                    return;
+                }
+                localStorage.setItem('gemini_api_key', trimmedKey);
+                setView('app');
+                setError(null);
+            };
 
-      <a 
-        href={API_GET_URL} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="mt-12 flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-indigo-600 transition-colors"
-      >
-        <ExternalLink size={18} />
-        개인 API 발급받기
-      </a>
-    </div>
-  );
+            const resetToHome = () => {
+                // API 기억 삭제 및 입력칸 초기화 로직 추가
+                localStorage.removeItem('gemini_api_key');
+                setUserApiKey('');
+                
+                setView('init');
+                setResults(null);
+                setError(null);
+                setProductName('');
+                setGoal('');
+            };
 
-  const renderAppScreen = () => (
-    <div className="min-h-screen bg-[#f8fafc] p-4 sm:p-10 animate-in fade-in duration-500">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex justify-between items-center mb-10">
-          <button 
-            onClick={resetToHome}
-            className="flex items-center gap-2 text-sm font-black text-slate-400 hover:text-indigo-600 transition-colors bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm"
-          >
-            <Settings size={14} /> 홈으로 / 키 변경
-          </button>
-          <div className="flex items-center gap-2">
-             <span className="px-3 py-1 rounded-full text-sm font-black uppercase tracking-widest bg-indigo-50 text-indigo-600">
-                Direct API Mode
-             </span>
-          </div>
-        </div>
+            const fetchWithRetry = async (url, options, maxRetries = 5) => {
+                let retries = 0;
+                while (retries < maxRetries) {
+                    try {
+                        const response = await fetch(url, options);
+                        if (response.ok) return await response.json();
+                        
+                        const errorData = await response.json();
+                        throw new Error(errorData.error?.message || `Error ${response.status}`);
+                    } catch (err) {
+                        retries++;
+                        if (retries === maxRetries) throw err;
+                        const delay = Math.pow(2, retries) * 1000; // 1s, 2s, 4s...
+                        await new Promise(res => setTimeout(res, delay));
+                    }
+                }
+            };
 
-        <div className="mb-12 text-center">
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">
-            Interview Target <span className="text-indigo-600">Optimizer</span>
-          </h1>
-          <p className="text-sm md:text-base font-medium text-slate-400">분석 대상을 입력하여 전략적 10인 페르소나를 도출하세요.</p>
-        </div>
+            const generateTargets = async () => {
+                if (!productName.trim()) {
+                    setError("상품명을 입력해 주세요.");
+                    return;
+                }
 
-        <div className="bg-white rounded-[2.5rem] p-8 md:p-10 shadow-sm border border-slate-200 mb-10">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm font-black text-slate-700 ml-1">
-                <Search size={16} className="text-indigo-600" /> 분석 대상 상품
-              </label>
-              <input 
-                type="text" 
-                placeholder="예: 프리미엄 소형 건조기"
-                className="w-full px-6 py-5 bg-slate-50 rounded-2xl border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold text-slate-800 text-sm md:text-base"
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm font-black text-slate-700 ml-1">
-                <Target size={16} className="text-indigo-600" /> 상세 분석 목표
-              </label>
-              <input 
-                type="text" 
-                placeholder="예: 자취생의 실구매 허들 파악"
-                className="w-full px-6 py-5 bg-slate-50 rounded-2xl border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold text-slate-800 text-sm md:text-base"
-                value={goal}
-                onChange={(e) => setGoal(e.target.value)}
-              />
-            </div>
-          </div>
+                setLoading(true);
+                setError(null);
+                setResults(null);
 
-          <button 
-            onClick={generateTargets}
-            disabled={loading}
-            className={`w-full mt-10 py-5 rounded-[1.5rem] font-black text-lg flex items-center justify-center gap-3 transition-all duration-300 transform ${
-              loading 
-                ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-                : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-1 shadow-xl shadow-indigo-100 active:scale-95'
-            }`}
-          >
-            {loading ? (
-              <>
-                <Loader2 className="animate-spin" size={24} />
-                데이터 분석 중...
-              </>
-            ) : (
-              <><Send size={22} /> 분석 실행</>
-            )}
-          </button>
-          
-          {error && (
-             <div className="mt-6 p-4 bg-rose-50 text-rose-700 text-sm font-bold rounded-2xl border border-rose-100 flex flex-col items-start gap-4 animate-in slide-in-from-top-2">
-                <div className="flex items-start gap-2">
-                  <ShieldAlert size={18} className="mt-1 shrink-0"/> 
-                  <p>{error}</p>
+                const currentKey = userApiKey.trim();
+
+                const systemPrompt = `
+                    당신은 글로벌 소비재 기업의 '수석 상품 기획자'이자 '컨슈머 트렌드 분석가'입니다. 
+                    상품 정보를 바탕으로 구매력과 미래 가치를 진단하기 위한 최적의 인터뷰 대상자 10명을 제안하십시오.
+                    반드시 다음 10가지 소비자 관점을 유지하십시오:
+                    1. Trendsetter, 2. Hard-Core Reviewer, 3. Heavy User, 4. Life-Styler, 5. Tech-Savvy, 
+                    6. Next-Gen, 7. Ethical Consumer, 8. Economic Analyst, 9. CX Strategist, 10. Skeptic.
+                    
+                    중요 지침:
+                    - 'impact' 필드에는 해당 타겟의 영향력과 함께 이 타겟을 선정한 이유를 반드시 포함하여 '3줄'로 작성하십시오.
+                    
+                    응답은 반드시 한국어로 작성하며 JSON 형식이어야 합니다.
+                `;
+
+                try {
+                    const data = await fetchWithRetry(
+                        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${currentKey}`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ parts: [{ text: `분석 대상 상품: ${productName}\n인터뷰 핵심 목표: ${goal || '시장 경쟁력 확보'}` }] }],
+                                systemInstruction: { parts: [{ text: systemPrompt }] },
+                                generationConfig: {
+                                    responseMimeType: "application/json",
+                                    responseSchema: {
+                                        type: "OBJECT",
+                                        properties: {
+                                            targets: {
+                                                type: "ARRAY",
+                                                items: {
+                                                    type: "OBJECT",
+                                                    properties: {
+                                                        type: { type: "STRING" },
+                                                        persona: { type: "STRING" },
+                                                        impact: { type: "STRING" },
+                                                        question: { type: "STRING" },
+                                                        insight: { type: "STRING" }
+                                                    },
+                                                    required: ["type", "persona", "impact", "question", "insight"]
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            })
+                        }
+                    );
+
+                    const resText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!resText) throw new Error("분석 데이터를 가져오지 못했습니다.");
+                    
+                    const parsedData = JSON.parse(resText);
+                    setResults(parsedData.targets);
+                } catch (err) {
+                    console.error(err);
+                    setError("API 키가 유효하지 않거나 네트워크 오류가 발생했습니다. 키를 확인하고 다시 시도해 주세요.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const copyResults = () => {
+                if (!results) return;
+                
+                let textToCopy = `[분석 대상 상품]\n${productName}\n\n`;
+                textToCopy += `[인터뷰 핵심 목표]\n${goal || '시장 경쟁력 확보'}\n\n`;
+                textToCopy += `[전문 인터뷰 타겟 제안 리스트]\n\n`;
+                
+                textToCopy += results.map((t, i) => (
+                    `${i + 1}. [${t.type}] ${t.persona}\n` +
+                    `- 선정 이유: ${t.impact}\n` +
+                    `- 전략적 질문: ${t.question}\n` +
+                    `- 기대 통찰: ${t.insight}`
+                )).join('\n\n');
+
+                const textArea = document.createElement("textarea");
+                textArea.value = textToCopy;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                setCopyStatus(true);
+                setTimeout(() => setCopyStatus(false), 2000);
+            };
+
+            // --- Render Functions ---
+
+            const renderHomeScreen = () => (
+                <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center animate-in">
+                    <h1 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tight mb-4">
+                        Interview Target <span className="text-indigo-600">Optimizer</span>
+                    </h1>
+                    <p className="text-sm md:text-base font-medium text-slate-500 max-w-lg mb-12 leading-relaxed">
+                        상품의 현재 구매력과 미래 가치를 완벽하게 진단해 줄<br/>
+                        최고의 인터뷰 타겟 10인을 AI가 정밀 제안합니다.
+                    </p>
+
+                    <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-xl p-8 md:p-10 border border-slate-100 text-left">
+                        <div className="text-center mb-8">
+                            <h2 className="text-2xl font-black text-slate-900 mb-2 tracking-tight">API 설정</h2>
+                            <p className="text-slate-500 text-sm font-medium leading-relaxed">
+                                분석을 위해 개인 API 키를 입력해 주세요.
+                            </p>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-sm font-black text-slate-400 uppercase tracking-widest ml-1">Gemini API Key</label>
+                                <input 
+                                    type="password" 
+                                    placeholder="AIzaSy... 로 시작하는 키"
+                                    className="w-full px-5 py-4 bg-slate-50 rounded-2xl border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-mono text-sm"
+                                    value={userApiKey}
+                                    onChange={(e) => setUserApiKey(e.target.value)}
+                                />
+                            </div>
+
+                            <button 
+                                onClick={saveAndGoToApp}
+                                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-2"
+                            >
+                                설정 저장 및 분석 시작 <ArrowRight size={18} />
+                            </button>
+
+                            {error && (
+                                <div className="p-3 bg-rose-50 text-rose-600 text-sm font-bold rounded-xl flex items-center gap-2 border border-rose-100">
+                                    <ShieldAlert size={14} /> {error}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <a 
+                        href={API_GET_URL} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="mt-12 flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-indigo-600 transition-colors"
+                    >
+                        <ExternalLink size={18} />
+                        개인 API 발급받기
+                    </a>
                 </div>
-                <button onClick={generateTargets} className="px-6 py-2 bg-rose-100 rounded-xl hover:bg-rose-200 transition-colors text-sm font-bold">다시 시도</button>
-             </div>
-          )}
-        </div>
+            );
 
-        {results && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
-            <div className="flex items-center justify-between px-4">
-              <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-                <Users className="text-indigo-600" size={30} /> 도출된 핵심 타겟
-              </h2>
-              <button 
-                onClick={copyResults}
-                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm font-black text-slate-600 hover:text-indigo-600 transition-all active:scale-95 shadow-sm"
-              >
-                {copyStatus ? <><CheckCircle2 size={18} className="text-emerald-500" /> 복사 완료</> : <><Copy size={18} /> 결과 복사</>}
-              </button>
-            </div>
+            const renderAppScreen = () => (
+                <div className="min-h-screen bg-[#f8fafc] p-4 sm:p-10 animate-in">
+                    <div className="max-w-5xl mx-auto">
+                        <div className="flex justify-between items-center mb-10">
+                            <button 
+                                onClick={resetToHome}
+                                className="flex items-center gap-2 text-sm font-black text-slate-400 hover:text-indigo-600 transition-colors bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm"
+                            >
+                                <Settings size={14} /> 홈으로 / 키 변경
+                            </button>
+                            <div className="flex items-center gap-2">
+                                 <span className="px-3 py-1 rounded-full text-sm font-black uppercase tracking-widest bg-indigo-50 text-indigo-600">
+                                    Direct API Mode
+                                 </span>
+                            </div>
+                        </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
-              {results.map((target, index) => (
-                <div key={index} className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 group">
-                  <div className="flex items-center justify-between mb-5">
-                    <span className="text-sm font-black uppercase tracking-widest text-indigo-500 bg-indigo-50 px-3 py-1.5 rounded-full">
-                      {target.type}
-                    </span>
-                    <TrendingUp size={16} className="text-slate-300 group-hover:text-indigo-400 transition-colors" />
-                  </div>
-                  <h3 className="text-xl font-black text-slate-900 mb-4 leading-tight group-hover:text-indigo-600 transition-colors">
-                    {target.persona}
-                  </h3>
-                  <div className="space-y-5">
-                    <section>
-                      <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">선정 이유</h4>
-                      <p className="text-sm text-slate-600 leading-relaxed font-semibold whitespace-pre-line">{target.impact}</p>
-                    </section>
-                    <section className="bg-slate-50 p-5 rounded-2xl border border-slate-100 group-hover:bg-indigo-50/50 transition-colors">
-                      <h4 className="text-sm font-black text-indigo-400 uppercase tracking-widest mb-2">전략적 질문</h4>
-                      <p className="text-sm md:text-[15px] font-bold text-slate-800 italic leading-snug">"{target.question}"</p>
-                    </section>
-                    <section className="pt-4 border-t border-slate-100 flex gap-3">
-                      <CheckCircle2 size={14} className="text-emerald-500 mt-1 shrink-0" />
-                      <div>
-                        <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest">기대 통찰</h4>
-                        <p className="text-sm text-slate-600 font-bold">{target.insight}</p>
-                      </div>
-                    </section>
-                  </div>
+                        <div className="mb-12 text-center">
+                            <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">
+                                Interview Target <span className="text-indigo-600">Optimizer</span>
+                            </h1>
+                            <p className="text-sm md:text-base font-medium text-slate-400">분석 대상을 입력하여 전략적 10인 페르소나를 도출하세요.</p>
+                        </div>
+
+                        <div className="bg-white rounded-[2.5rem] p-8 md:p-10 shadow-sm border border-slate-200 mb-10">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="space-y-3">
+                                    <label className="flex items-center gap-2 text-sm font-black text-slate-700 ml-1">
+                                        <Search size={16} className="text-indigo-600" /> 분석 대상 상품
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="예: 프리미엄 소형 건조기"
+                                        className="w-full px-6 py-5 bg-slate-50 rounded-2xl border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold text-slate-800 text-sm md:text-base"
+                                        value={productName}
+                                        onChange={(e) => setProductName(e.target.value)}
+                                    />
+                                </div>
+                                <div className="space-y-3">
+                                    <label className="flex items-center gap-2 text-sm font-black text-slate-700 ml-1">
+                                        <Target size={16} className="text-indigo-600" /> 상세 분석 목표
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="예: 자취생의 실구매 허들 파악"
+                                        className="w-full px-6 py-5 bg-slate-50 rounded-2xl border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold text-slate-800 text-sm md:text-base"
+                                        value={goal}
+                                        onChange={(e) => setGoal(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={generateTargets}
+                                disabled={loading}
+                                className={`w-full mt-10 py-5 rounded-[1.5rem] font-black text-lg flex items-center justify-center gap-3 transition-all duration-300 transform ${
+                                    loading 
+                                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                                        : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-1 shadow-xl shadow-indigo-100 active:scale-95'
+                                }`}
+                            >
+                                {loading ? (
+                                    <>
+                                        <Loader2 className="animate-spin" size={24} />
+                                        데이터 분석 중...
+                                    </>
+                                ) : (
+                                    <><Send size={22} /> 분석 실행</>
+                                )}
+                            </button>
+                            
+                            {error && (
+                                 <div className="mt-6 p-4 bg-rose-50 text-rose-700 text-sm font-bold rounded-2xl border border-rose-100 flex flex-col items-start gap-4 animate-in slide-in-from-top-2">
+                                        <div className="flex items-start gap-2">
+                                            <ShieldAlert size={18} className="mt-1 shrink-0"/> 
+                                            <p>{error}</p>
+                                        </div>
+                                        <button onClick={generateTargets} className="px-6 py-2 bg-rose-100 rounded-xl hover:bg-rose-200 transition-colors text-sm font-bold">다시 시도</button>
+                                 </div>
+                            )}
+                        </div>
+
+                        {results && (
+                            <div className="space-y-8 animate-in pb-20">
+                                <div className="flex items-center justify-between px-4">
+                                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                                        <Users className="text-indigo-600" size={30} /> 도출된 핵심 타겟
+                                    </h2>
+                                    <button 
+                                        onClick={copyResults}
+                                        className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm font-black text-slate-600 hover:text-indigo-600 transition-all active:scale-95 shadow-sm"
+                                    >
+                                        {copyStatus ? <><CheckCircle2 size={18} className="text-emerald-500" /> 복사 완료</> : <><Copy size={18} /> 결과 복사</>}
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {results.map((target, index) => (
+                                        <div key={index} className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 group">
+                                            <div className="flex items-center justify-between mb-5">
+                                                <span className="text-sm font-black uppercase tracking-widest text-indigo-500 bg-indigo-50 px-3 py-1.5 rounded-full">
+                                                    {target.type}
+                                                </span>
+                                                <TrendingUp size={16} className="text-slate-300 group-hover:text-indigo-400 transition-colors" />
+                                            </div>
+                                            <h3 className="text-xl font-black text-slate-900 mb-4 leading-tight group-hover:text-indigo-600 transition-colors">
+                                                {target.persona}
+                                            </h3>
+                                            <div className="space-y-5">
+                                                <section>
+                                                    <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">선정 이유</h4>
+                                                    <p className="text-sm text-slate-600 leading-relaxed font-semibold whitespace-pre-line">{target.impact}</p>
+                                                </section>
+                                                <section className="bg-slate-50 p-5 rounded-2xl border border-slate-100 group-hover:bg-indigo-50/50 transition-colors">
+                                                    <h4 className="text-sm font-black text-indigo-400 uppercase tracking-widest mb-2">전략적 질문</h4>
+                                                    <p className="text-sm md:text-[15px] font-bold text-slate-800 italic leading-snug">"{target.question}"</p>
+                                                </section>
+                                                <section className="pt-4 border-t border-slate-100 flex gap-3">
+                                                    <CheckCircle2 size={14} className="text-emerald-500 mt-1 shrink-0" />
+                                                    <div>
+                                                        <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest">기대 통찰</h4>
+                                                        <p className="text-sm text-slate-600 font-bold">{target.insight}</p>
+                                                    </div>
+                                                </section>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+            );
 
-  // --- Main Router ---
-  switch (view) {
-    case 'init': return renderHomeScreen();
-    case 'app': return renderAppScreen();
-    default: return renderHomeScreen();
-  }
-};
+            // --- Main Router ---
+            switch (view) {
+                case 'init': return renderHomeScreen();
+                case 'app': return renderAppScreen();
+                default: return renderHomeScreen();
+            }
+        };
 
-export default App;
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
